@@ -1,0 +1,31 @@
+plugins {
+    id 'com.android.application'
+}
+
+def appToken = System.getenv('JM_APP_TOKEN') ?: ''
+def appUrl = System.getenv('JM_APP_URL') ?: 'https://jofano.com/jm-bengkel/app/index.php'
+
+android {
+    namespace 'com.jofano.jmmotoshop'
+    compileSdk 35
+
+    defaultConfig {
+        applicationId 'com.jofano.jmmotoshop'
+        minSdk 24
+        targetSdk 35
+        versionCode 4
+        versionName '2.0.2'
+
+        buildConfigField 'String', 'APP_URL', '"' + appUrl.replace('\\', '\\\\').replace('"', '\\"') + '"'
+        buildConfigField 'String', 'APP_TOKEN', '"' + appToken.replace('\\', '\\\\').replace('"', '\\"') + '"'
+    }
+
+    buildFeatures {
+        buildConfig true
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}
