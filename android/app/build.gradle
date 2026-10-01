@@ -13,8 +13,8 @@ android {
         applicationId 'com.jofano.jmmotoshop'
         minSdk 24
         targetSdk 35
-        versionCode 4
-        versionName '2.0.2'
+        versionCode 5
+        versionName '2.1.0'
 
         buildConfigField 'String', 'APP_URL', '"' + appUrl.replace('\\', '\\\\').replace('"', '\\"') + '"'
         buildConfigField 'String', 'APP_TOKEN', '"' + appToken.replace('\\', '\\\\').replace('"', '\\"') + '"'
