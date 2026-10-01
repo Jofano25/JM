@@ -1,45 +1,112 @@
 name: Build Android APK
 
-on:
+"on":
   workflow_dispatch:
   push:
     paths:
-      - 'android/**'
+      - '**/android/**'
+      - '**/*.zip'
       - '.github/workflows/android-build.yml'
 
 jobs:
   build:
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: android
+    permissions:
+      contents: read
+
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - name: Checkout source
+        uses: actions/checkout@v6
 
       - name: Setup Java 17
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: '17'
 
       - name: Setup Gradle 8.9
-        uses: gradle/actions/setup-gradle@v4
+        uses: gradle/actions/setup-gradle@v6
         with:
           gradle-version: '8.9'
+          cache-provider: basic
+
+      - name: Locate Android project
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          find_android_project() {
+            find "$1" -maxdepth 7 -type f \( -name settings.gradle -o -name settings.gradle.kts \) -print -quit 2>/dev/null || true
+          }
+
+          SETTINGS_FILE="$(find_android_project "$GITHUB_WORKSPACE")"
+
+          # Support repository yang menyimpan source V2 sebagai ZIP.
+          if [ -z "$SETTINGS_FILE" ]; then
+            ZIP_FILE="$(find "$GITHUB_WORKSPACE" -maxdepth 3 -type f \( -iname '*JM*Motoshop*.zip' -o -iname '*Management*v2*.zip' \) -print -quit 2>/dev/null || true)"
+            if [ -n "$ZIP_FILE" ]; then
+              echo "Android project belum ditemukan sebagai folder; mencoba extract: $ZIP_FILE"
+              rm -rf "$RUNNER_TEMP/jm-source"
+              mkdir -p "$RUNNER_TEMP/jm-source"
+              unzip -q "$ZIP_FILE" -d "$RUNNER_TEMP/jm-source"
+              SETTINGS_FILE="$(find_android_project "$RUNNER_TEMP/jm-source")"
+            fi
+          fi
+
+          if [ -z "$SETTINGS_FILE" ]; then
+            echo "::error::Project Android tidak ditemukan. Pastikan file settings.gradle dan folder app ada di repository, atau upload ZIP JM_Motoshop_Management_v2.zip."
+            echo "Isi repository saat ini:"
+            find "$GITHUB_WORKSPACE" -maxdepth 3 -type f | sort | head -200
+            exit 1
+          fi
+
+          ANDROID_DIR="$(dirname "$SETTINGS_FILE")"
+          echo "ANDROID_DIR=$ANDROID_DIR" >> "$GITHUB_ENV"
+          echo "Android project ditemukan di: $ANDROID_DIR"
+          echo "settings.gradle: $SETTINGS_FILE"
+
+      - name: Validate APK secret
+        shell: bash
+        env:
+          JM_APP_TOKEN: ${{ secrets.JM_APP_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -z "${JM_APP_TOKEN:-}" ]; then
+            echo "::error::Secret JM_APP_TOKEN belum dibuat. Buka Settings > Secrets and variables > Actions > New repository secret."
+            exit 1
+          fi
 
       - name: Build debug APK
+        shell: bash
         env:
           JM_APP_TOKEN: ${{ secrets.JM_APP_TOKEN }}
           JM_APP_URL: https://jofano.com/jm-bengkel/app/index.php
-        run: gradle :app:assembleDebug --stacktrace
+        run: |
+          set -euo pipefail
+          cd "$ANDROID_DIR"
+          echo "Build directory: $(pwd)"
+          gradle --version
+          gradle :app:assembleDebug --stacktrace --no-daemon
 
-      - name: Rename APK
-        run: cp app/build/outputs/apk/debug/app-debug.apk app/build/outputs/apk/debug/JM-Motoshop.apk
+      - name: Prepare APK artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK_SOURCE="$ANDROID_DIR/app/build/outputs/apk/debug/app-debug.apk"
+          if [ ! -f "$APK_SOURCE" ]; then
+            echo "::error::Build selesai tetapi APK tidak ditemukan di $APK_SOURCE"
+            find "$ANDROID_DIR/app/build/outputs" -maxdepth 5 -type f 2>/dev/null || true
+            exit 1
+          fi
+
+          mkdir -p "$GITHUB_WORKSPACE/artifacts"
+          cp "$APK_SOURCE" "$GITHUB_WORKSPACE/artifacts/JM-Motoshop.apk"
+          ls -lh "$GITHUB_WORKSPACE/artifacts/JM-Motoshop.apk"
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
           name: JM-Motoshop-APK
-          path: android/app/build/outputs/apk/debug/JM-Motoshop.apk
+          path: artifacts/JM-Motoshop.apk
           retention-days: 30
+          if-no-files-found: error
